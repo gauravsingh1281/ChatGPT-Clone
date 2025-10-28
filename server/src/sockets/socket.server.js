@@ -44,7 +44,7 @@ const initSocketServer = (httpServer) => {
             });
 
             // short term memory
-            const chatHistory = await Message.find({ chat: msgPayload.chat });
+            const chatHistory = (await Message.find({ chat: msgPayload.chat }).sort({ createdAt: -1 }).limit(20).lean()).reverse();
 
 
             const aiResponse = await aiService.generateResponse(chatHistory.map(item => {
