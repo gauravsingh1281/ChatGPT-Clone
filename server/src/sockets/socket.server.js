@@ -50,11 +50,12 @@ const initSocketServer = (httpServer) => {
             // Search memory 
             const memory = await queryMemory({
                 queryVector: userMsgVectorsEmbedding,
-                limit: 3,
+                limit: 6,
                 metadata: {
                 }
             });
 
+            console.log("memory", memory);
             // saving user message vector to vector db
             await createMemory({
                 vectors: userMsgVectorsEmbedding,
@@ -67,17 +68,30 @@ const initSocketServer = (httpServer) => {
                 }
             });
 
-            console.log("memory", memory);
+
             // short term memory
             const chatHistory = (await Message.find({ chat: msgPayload.chat }).sort({ createdAt: -1 }).limit(20).lean()).reverse();
-
-
-            const aiResponseMessage = await aiService.generateResponse(chatHistory.map(item => {
+            const shortTermMemory = chatHistory.map(item => {
                 return {
                     role: item.role,
                     parts: [{ text: item.content }],
                 }
-            }));
+            })
+
+            // long term memory
+            const longTermMemory = [
+                {
+                    role: "user",
+                    parts: [{
+                        text: `These are some previous messages from the chat, use them to generate a response ${memory.map(item => item.metadata.text).join("\n")}`
+                    }]
+                }
+            ]
+
+            console.log([...longTermMemory, ...shortTermMemory]);
+
+
+            const aiResponseMessage = await aiService.generateResponse([...longTermMemory, ...shortTermMemory]);
             // saving ai model response message to mongodb
             const aiModelResponse = await Message.create({
                 chat: msgPayload.chat,
