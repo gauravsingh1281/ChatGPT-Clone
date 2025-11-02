@@ -36,28 +36,22 @@ const initSocketServer = (httpServer) => {
     io.on("connection", async (socket) => {
         console.log("A user connected with id:", socket.id);
         socket.on("ai-message", async (msgPayload) => {
-            // saving user message to mongodb
-            const userMsg = await Message.create({
-                chat: msgPayload.chat,
-                user: socket.user._id,
-                content: msgPayload.content,
-                role: "user",
-            });
 
-            // converting user message in vector embeddings 
-            const userMsgVectorsEmbedding = await aiService.generateVectorEmbedding(msgPayload.content);
+            const [userMsg, userMsgVectorsEmbedding] = await Promise.all([
+                // saving user message to mongodb
+                Message.create({
+                    chat: msgPayload.chat,
+                    user: socket.user._id,
+                    content: msgPayload.content,
+                    role: "user",
+                }),
 
-            // Search memory 
-            const memory = await queryMemory({
-                queryVector: userMsgVectorsEmbedding,
-                limit: 6,
-                metadata: {
-                }
-            });
+                // converting user message in vector embeddings 
+                aiService.generateVectorEmbedding(msgPayload.content),
 
-            console.log("memory", memory);
+            ]);
             // saving user message vector to vector db
-            await createMemory({
+            createMemory({
                 vectors: userMsgVectorsEmbedding,
                 messageId: userMsg._id,
                 metadata: {
@@ -66,11 +60,23 @@ const initSocketServer = (httpServer) => {
                     text: msgPayload.content,
                     role: "user"
                 }
-            });
+            })
+
+            // Search memory 
+            const [memory, chatHistory] = await Promise.all([
+                // from vector db
+                queryMemory({
+                    queryVector: userMsgVectorsEmbedding,
+                    limit: 6,
+                    metadata: {
+                        user: socket.user._id,
+                    }
+                }),
+                //  from mongodb
+                Message.find({ chat: msgPayload.chat }).sort({ createdAt: -1 }).limit(20).lean().then(message => message.reverse())
+            ])
 
 
-            // short term memory
-            const chatHistory = (await Message.find({ chat: msgPayload.chat }).sort({ createdAt: -1 }).limit(20).lean()).reverse();
             const shortTermMemory = chatHistory.map(item => {
                 return {
                     role: item.role,
@@ -92,18 +98,26 @@ const initSocketServer = (httpServer) => {
 
 
             const aiResponseMessage = await aiService.generateResponse([...longTermMemory, ...shortTermMemory]);
-            // saving ai model response message to mongodb
-            const aiModelResponse = await Message.create({
-                chat: msgPayload.chat,
-                user: socket.user._id,
+
+            socket.emit("ai-response", {
                 content: aiResponseMessage,
-                role: "model"
+                chat: msgPayload.chat
             });
 
-            // converting ai model response in vector embeddings 
-            const aiModelResponseVectorsEmbedding = await aiService.generateVectorEmbedding(aiResponseMessage);
-            // saving ai model response vector to vector db
+            const [aiModelResponse, aiModelResponseVectorsEmbedding] = await Promise.all([
+                // saving ai model response message to mongodb
+                Message.create({
+                    chat: msgPayload.chat,
+                    user: socket.user._id,
+                    content: aiResponseMessage,
+                    role: "model"
+                }),
+                // converting ai model response in vector embeddings 
+                aiService.generateVectorEmbedding(aiResponseMessage)
 
+            ]);
+
+            // saving ai model response vector to vector db
             await createMemory({
                 vectors: aiModelResponseVectorsEmbedding,
                 messageId: aiModelResponse._id,
@@ -115,10 +129,7 @@ const initSocketServer = (httpServer) => {
                 }
             })
 
-            socket.emit("ai-response", {
-                content: aiResponseMessage,
-                chat: msgPayload.chat
-            });
+
         })
 
         socket.on("disconnect", () => {
