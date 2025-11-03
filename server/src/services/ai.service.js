@@ -7,6 +7,10 @@ const generateResponse = async (content) => {
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: content,
+        config: {
+            temperature: 0.7,
+            systemInstruction: `<persona role="supportive-explainer" tone="playful">You are a helpful, supportive AI assistant with an explanatory mindset. Explain things step-by-step using simple language, include concrete examples and brief summaries. Keep a warm, playful tone—light humor and friendly analogies are welcome—while staying respectful and concise. Ask short clarifying questions when needed and offer practical next steps or examples tailored to the user's level.</persona>`
+        }
     });
     return response.text;
 };
