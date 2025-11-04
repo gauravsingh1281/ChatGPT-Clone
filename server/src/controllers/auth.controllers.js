@@ -18,9 +18,14 @@ const register = async (req, res) => {
             password: hashedPassword,
         });
 
-        const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET_KEY);
+        const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET_KEY, { expiresIn: "7d" });
 
-        res.cookie("token", token);
+        res.cookie("token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
 
         res.status(201).json({
             message: "User registered successfully", user: {
@@ -45,9 +50,14 @@ const login = async (req, res) => {
         const validPassword = await bcrypt.compare(password, isUserExists.password);
         if (!validPassword) return res.status(400).json({ message: "Invalid Credentials." });
 
-        const token = jwt.sign({ id: isUserExists._id }, process.env.JWT_SECRET_KEY);
+        const token = jwt.sign({ id: isUserExists._id }, process.env.JWT_SECRET_KEY, { expiresIn: "7d" });
 
-        res.cookie("token", token);
+        res.cookie("token", token), {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        };
         res.status(200).json({
             message: "User loggedIn successfully", user: {
                 id: isUserExists._id,
@@ -59,6 +69,31 @@ const login = async (req, res) => {
         console.log("Error in login controller:", error);
         res.status(500).json({ message: "Internal Server Error" });
     }
-}
+};
 
-module.exports = { register, login };
+const logout = async (_, res) => {
+    try {
+        res.clearCookie("token", {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+        });
+        res.status(200).json({ message: "User logged out successfully." });
+    } catch (error) {
+        console.log("Error in logout controller:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    };
+};
+
+const getCurrentUser = async (req, res) => {
+    try {
+        const authenticatedUser = req.user;
+        if (!authenticatedUser) return res.status(401).json({ message: "Unauthorized." });
+        res.status(200).json({ user: authenticatedUser });
+    } catch (error) {
+        console.log("Error in getCurrentUser controller:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    };
+};
+
+module.exports = { register, login, logout, getCurrentUser };
